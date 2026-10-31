@@ -1,6 +1,12 @@
 from ldap3 import Server, Connection, SUBTREE, ALL, MODIFY_ADD
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Annotated
+from pydantic import ValidationError as PydanticValidationError
+import httpx
+from ldap3.utils.dn import escape_rdn
+from schemas import CreateUserRequest, CreateUserResponse
+import unicodedata
 
 app = FastAPI()
 
@@ -52,3 +58,37 @@ def get_users():
         }
         for entry in conn.entries
     ]
+    
+def make_login(prenom: str, nom: str) -> str:
+    # prenom.nom sans accents ni espaces, 20 caractères max (limite sAMAccountName)
+    raw = f"{prenom}.{nom}".lower().replace(" ", "")
+    ascii_login = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
+    return ascii_login[:20]
+
+
+@app.post("/users/create")
+def create_user(req: CreateUserRequest):
+    login = make_login(req.prenom, req.nom)
+    dn = f"CN={escape_rdn(req.prenom + ' ' + req.nom)},CN=Users,{AD_SEARCH_BASE}"
+
+    # Mêmes attributs que ceux lus dans /users (directReports est calculé par l'AD)
+    attrs = {
+        "givenName": req.prenom,
+        "sn": req.nom,
+        "displayName": f"{req.prenom} {req.nom}",
+        "sAMAccountName": login,
+        "userPrincipalName": f"{login}@keenan.local",
+    }
+    if req.mail:
+        attrs["mail"] = req.mail
+    if req.service:
+        attrs["department"] = req.service
+    if req.tel:
+        attrs["telephoneNumber"] = req.tel
+
+    ok = conn.add(dn, ["top", "person", "organizationalPerson", "user"], attrs)
+    if not ok:
+        status = 409 if conn.result.get("description") == "entryAlreadyExists" else 400
+        raise HTTPException(status_code=status, detail=conn.result.get("message") or conn.result.get("description"))
+
+    return CreateUserResponse(success=True, user_id=login)

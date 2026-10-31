@@ -4,6 +4,7 @@ import Drawer from './components/Drawer';
 import CardAdd from './components/CardAdd';
 import FormAdd from './components/FormAdd';
 import { Link } from 'react-router-dom';
+
 function ListUser() {
 
   const [user, setUser] = useState([]);
@@ -13,12 +14,14 @@ function ListUser() {
   const [currentContent, setCurrentContent] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
+  const loadUsers = () => {
     fetch('http://127.0.0.1:8000/users')
       .then((res) => res.json())
       .then((data) => setUser(data))
       .catch((err) => console.error(err));
-  }, []);
+  };
+
+  useEffect(loadUsers, []);
   console.log(user);
   const terme = recherche.trim().toLowerCase();
   const filtered = user.filter((u) => 
@@ -95,7 +98,7 @@ function ListUser() {
         ) : (
           <p className='py-10 text-center text-slate-500'>Chargement…</p>
         )}
-        {modalOpen && <FormAdd onClose={() => setModalOpen(false)}/>}
+        {modalOpen && <FormAdd onClose={() => setModalOpen(false)} onCreated={loadUsers}/>}
         {drawerOpen && <Drawer onClose={() => setDrawerOpen(false)} nom={currentContent.nom} prenom={currentContent.prenom} mail={currentContent.mail} service={currentContent.service ?? 'Service non spécifié'} />}
       </main>
     </>
